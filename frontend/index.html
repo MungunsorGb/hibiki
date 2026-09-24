@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HIBIKI-AI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">HIBIKI-AI</div>
+      <div id="conn-badge" class="badge badge-gray">Not Connected</div>
+    </header>
+
+    <main id="view-dashboard" class="view active">
+      <h1>Robot Dashboard</h1>
+
+      <div class="card">
+        <div class="card-label">ESP32 CONNECTION</div>
+        <input id="esp32-ip" type="text" placeholder="192.168.x.x" />
+        <button id="btn-connect" class="btn">Save IP</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">BASELINE</div>
+        <p id="baseline-status" class="muted">No baseline set yet.</p>
+        <button id="btn-baseline" class="btn btn-primary">Set Current Tap as Baseline</button>
+      </div>
+
+      <div class="card">
+        <div class="card-label">PROGRESS</div>
+        <p id="progress-text" class="muted">0 points inspected</p>
+      </div>
+
+      <button id="btn-reset" class="btn btn-danger">Reset Session</button>
+    </main>
+
+    <main id="view-inspect" class="view">
+      <h1>Live Inspection</h1>
+
+      <div class="card">
+        <div class="card-label">POINT LABEL</div>
+        <input id="point-label" type="text" placeholder="e.g. Span B - Lower Flange" />
+        <button id="btn-tap" class="btn btn-primary">Fire Tap &amp; Inspect</button>
+      </div>
+
+      <div id="result-card" class="card result-card hidden">
+        <div class="result-header">
+          <span>RESULT</span>
+          <span id="result-badge" class="badge">-</span>
+        </div>
+        <div class="result-big" id="result-label">-</div>
+        <div class="result-row">Deviation from baseline: <b id="result-dev">-</b></div>
+        <div class="result-row muted" id="result-method">-</div>
+      </div>
+
+      <canvas id="chart" width="600" height="220"></canvas>
+      <p class="muted small">Red = X, Green = Y, Blue = Z (m/s²)</p>
+    </main>
+
+    <main id="view-heatmap" class="view">
+      <h1>Inspection Points</h1>
+      <div id="points-list"></div>
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-view="dashboard">Dashboard</button>
+      <button class="tab" data-view="inspect">Inspect</button>
+      <button class="tab" data-view="heatmap">Heatmap</button>
+    </nav>
+  </div>
+
+<script src="app.js"></script>
+</body>
+</html>
