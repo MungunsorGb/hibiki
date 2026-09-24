@@ -4,28 +4,19 @@ const els = {
   connBadge: document.getElementById("conn-badge"),
   esp32Ip: document.getElementById("esp32-ip"),
   btnConnect: document.getElementById("btn-connect"),
-  baselineStatus: document.getElementById("baseline-status"),
-  btnBaseline: document.getElementById("btn-baseline"),
   progressText: document.getElementById("progress-text"),
   btnReset: document.getElementById("btn-reset"),
   pointLabel: document.getElementById("point-label"),
-  pointPosition: document.getElementById("point-position"),
-  positionReadout: document.getElementById("position-readout"),
   btnTap: document.getElementById("btn-tap"),
   btnTapSim: document.getElementById("btn-tap-sim"),
   resultCard: document.getElementById("result-card"),
   resultBadge: document.getElementById("result-badge"),
   resultLabel: document.getElementById("result-label"),
-  resultDev: document.getElementById("result-dev"),
   resultMethod: document.getElementById("result-method"),
   chart: document.getElementById("chart"),
   heatmapCanvas: document.getElementById("heatmap-canvas"),
   pointsList: document.getElementById("points-list"),
 };
-
-els.pointPosition.addEventListener("input", () => {
-  els.positionReadout.textContent = els.pointPosition.value + "%";
-});
 
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
@@ -36,18 +27,6 @@ document.querySelectorAll(".tab").forEach(tab => {
     if (tab.dataset.view === "heatmap") loadPoints();
   });
 });
-document.getElementById("btn-baseline-sim").addEventListener("click", async () => {
-    els.baselineStatus.textContent = "Generating simulated baseline...";
-    try {
-      const res = await fetch(`${API}/esp32/baseline-sim`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed");
-      els.baselineStatus.textContent =
-        `[SIMULATED] Baseline set. RMS=${data.summary.rms_magnitude}, peak-to-peak=${data.summary.peak_to_peak_magnitude}`;
-    } catch (e) {
-      els.baselineStatus.textContent = "Error: " + e.message;
-    }
-  });
 
 function badgeClass(label) {
   if (label === "Normal") return "badge-normal";
@@ -78,25 +57,8 @@ els.btnConnect.addEventListener("click", async () => {
   }
 });
 
-els.btnBaseline.addEventListener("click", async () => {
-  els.baselineStatus.textContent = "Firing tap for baseline...";
-  try {
-    const res = await fetch(`${API}/esp32/baseline`, {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({})
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Failed");
-    els.baselineStatus.textContent =
-      `Baseline set. RMS=${data.summary.rms_magnitude}, peak-to-peak=${data.summary.peak_to_peak_magnitude}`;
-  } catch (e) {
-    els.baselineStatus.textContent = "Error: " + e.message;
-  }
-});
-
 els.btnReset.addEventListener("click", async () => {
   await fetch(`${API}/points`, { method: "DELETE" });
-  els.baselineStatus.textContent = "No baseline set yet.";
   els.progressText.textContent = "0 points inspected";
   els.resultCard.classList.add("hidden");
   els.pointsList.innerHTML = "";
@@ -107,7 +69,6 @@ function renderResult(data) {
   els.resultBadge.textContent = data.classification;
   els.resultBadge.className = "badge " + badgeClass(data.classification);
   els.resultLabel.textContent = data.classification;
-  els.resultDev.textContent = data.deviation_pct + "%";
   els.resultMethod.textContent = data.method;
   drawChart(data.raw.x, data.raw.y, data.raw.z);
   updateProgress();
@@ -115,13 +76,12 @@ function renderResult(data) {
 
 els.btnTap.addEventListener("click", async () => {
   const label = els.pointLabel.value.trim() || "Unlabeled point";
-  const position_pct = parseFloat(els.pointPosition.value);
   els.btnTap.textContent = "Tapping...";
   els.btnTap.disabled = true;
   try {
     const res = await fetch(`${API}/esp32/tap`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({label, position_pct})
+      body: JSON.stringify({label})
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Failed");
@@ -136,10 +96,9 @@ els.btnTap.addEventListener("click", async () => {
 
 els.btnTapSim.addEventListener("click", async () => {
   const label = els.pointLabel.value.trim() || "Unlabeled point";
-  const position_pct = parseFloat(els.pointPosition.value);
   const res = await fetch(`${API}/esp32/tap-sim`, {
     method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({label, position_pct})
+    body: JSON.stringify({label})
   });
   const data = await res.json();
   if (!res.ok) return alert("Error: " + (data.detail || "Failed"));
@@ -179,7 +138,6 @@ function drawHeatmap(points) {
   const w = els.heatmapCanvas.width, h = els.heatmapCanvas.height;
   ctx.clearRect(0, 0, w, h);
 
-  // schematic span line
   const y = h / 2;
   ctx.strokeStyle = "#d8dee6";
   ctx.lineWidth = 6;
@@ -189,11 +147,14 @@ function drawHeatmap(points) {
   ctx.stroke();
   ctx.fillStyle = "#8a94a3";
   ctx.font = "11px sans-serif";
-  ctx.fillText("Span start", 20, y + 30);
-  ctx.fillText("Span end", w - 80, y + 30);
+  ctx.fillText("Start", 20, y + 30);
+  ctx.fillText("End", w - 40, y + 30);
 
-  points.forEach(p => {
-    const px = 30 + ((p.position_pct ?? 50) / 100) * (w - 60);
+  const n = points.length;
+  points.forEach((p, i) => {
+    // Evenly spaced by tap order along the straight line.
+    const frac = n === 1 ? 0.5 : i / (n - 1);
+    const px = 30 + frac * (w - 60);
     ctx.beginPath();
     ctx.arc(px, y, 8, 0, Math.PI * 2);
     ctx.fillStyle = dotColor(p.classification);
@@ -215,8 +176,8 @@ async function loadPoints() {
     div.className = "point-item";
     div.innerHTML = `
       <div>
-        <div>${p.label}</div>
-        <div class="muted small">${p.position_pct ?? 50}% along span · ${p.deviation_pct}% deviation</div>
+        <div>#${p.order + 1} - ${p.label}</div>
+        <div class="muted small">peak-to-peak: ${p.summary.peak_to_peak_magnitude}</div>
       </div>
       <span class="badge ${badgeClass(p.classification)}">${p.classification}</span>
     `;

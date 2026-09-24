@@ -1,10 +1,12 @@
 """
-features.py - time-domain features and threshold-based comparison.
+features.py - time-domain features and threshold-based classification.
 
-IMPORTANT: This is NOT a trained ML model. It compares each tap's signal
-against a baseline you capture yourself, using placeholder thresholds.
-It has NOT been validated against any real damaged specimen. Replace
-classify_against_baseline() with a trained model once labeled data exists.
+IMPORTANT: This is NOT a trained ML model. It classifies each tap using
+FIXED placeholder thresholds on the signal's own peak-to-peak magnitude.
+These threshold values have NOT been calibrated against any real damaged
+specimen -- they exist only so the pipeline runs end-to-end today.
+Replace classify_by_magnitude() with a trained model once labeled data
+from real healthy/damaged taps exists.
 """
 import math
 from typing import List, Dict
@@ -30,24 +32,25 @@ def summarize(xs, ys, zs) -> Dict:
     }
 
 
-# PLACEHOLDER thresholds. Not calibrated against any real damage data.
-WARNING_DEVIATION_PCT = 25.0
-ATTENTION_DEVIATION_PCT = 60.0
+# PLACEHOLDER thresholds on peak-to-peak magnitude (m/s^2). NOT calibrated
+# against any real damage data. Adjust once you have real healthy vs.
+# damaged tap comparisons.
+WARNING_THRESHOLD = 1.0
+ATTENTION_THRESHOLD = 2.0
 
 
-def classify_against_baseline(current: Dict, baseline: Dict) -> Dict:
-    base_pp = baseline["peak_to_peak_magnitude"] or 1e-9
-    dev_pct = abs(current["peak_to_peak_magnitude"] - base_pp) / base_pp * 100.0
+def classify_by_magnitude(summary: Dict) -> Dict:
+    pp = summary["peak_to_peak_magnitude"]
 
-    if dev_pct >= ATTENTION_DEVIATION_PCT:
+    if pp >= ATTENTION_THRESHOLD:
         label = "Attention"
-    elif dev_pct >= WARNING_DEVIATION_PCT:
+    elif pp >= WARNING_THRESHOLD:
         label = "Warning"
     else:
         label = "Normal"
 
     return {
         "classification": label,
-        "deviation_pct": round(dev_pct, 2),
-        "method": "threshold-on-baseline-deviation (NOT a trained ML model)",
+        "peak_to_peak_magnitude": pp,
+        "method": "fixed-threshold-on-peak-to-peak (NOT a trained ML model, NOT calibrated)",
     }

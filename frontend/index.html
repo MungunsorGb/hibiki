@@ -23,15 +23,6 @@
       </div>
 
       <div class="card">
-        <div class="card-label">BASELINE</div>
-        <p id="baseline-status" class="muted">No baseline set yet.</p>
-        <button id="btn-baseline" class="btn btn-primary">Set Current Tap as Baseline</button>
-      </div>
-
-      <button id="btn-baseline-sim" class="btn">Simulate Baseline (no ESP32)</button>
-      
-
-      <div class="card">
         <div class="card-label">PROGRESS</div>
         <p id="progress-text" class="muted">0 points inspected</p>
       </div>
@@ -44,12 +35,7 @@
 
       <div class="card">
         <div class="card-label">POINT LABEL</div>
-        <input id="point-label" type="text" placeholder="e.g. Span B - Lower Flange" />
-
-        <div class="card-label">POSITION ALONG SPAN</div>
-        <input id="point-position" type="range" min="0" max="100" value="50" />
-        <div id="position-readout" class="muted small">50%</div>
-
+        <input id="point-label" type="text" placeholder="e.g. Girder 3" />
         <button id="btn-tap" class="btn btn-primary">Fire Tap &amp; Inspect</button>
         <button id="btn-tap-sim" class="btn">Simulate Tap (no ESP32)</button>
       </div>
@@ -60,7 +46,6 @@
           <span id="result-badge" class="badge">-</span>
         </div>
         <div class="result-big" id="result-label">-</div>
-        <div class="result-row">Deviation from baseline: <b id="result-dev">-</b></div>
         <div class="result-row muted" id="result-method">-</div>
       </div>
 
@@ -69,8 +54,8 @@
     </main>
 
     <main id="view-heatmap" class="view">
-      <h1>Inspection Map</h1>
-      <p class="muted small">Schematic position along span. Not to structural scale — placeholder until CAD overlay is added.</p>
+      <h1>Inspection Line</h1>
+      <p class="muted small">Points shown in tap order along the robot's path.</p>
       <canvas id="heatmap-canvas" width="600" height="140"></canvas>
       <div id="points-list"></div>
     </main>
