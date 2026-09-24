@@ -28,6 +28,9 @@
         <button id="btn-baseline" class="btn btn-primary">Set Current Tap as Baseline</button>
       </div>
 
+      <button id="btn-baseline-sim" class="btn">Simulate Baseline (no ESP32)</button>
+      
+
       <div class="card">
         <div class="card-label">PROGRESS</div>
         <p id="progress-text" class="muted">0 points inspected</p>
@@ -42,7 +45,13 @@
       <div class="card">
         <div class="card-label">POINT LABEL</div>
         <input id="point-label" type="text" placeholder="e.g. Span B - Lower Flange" />
+
+        <div class="card-label">POSITION ALONG SPAN</div>
+        <input id="point-position" type="range" min="0" max="100" value="50" />
+        <div id="position-readout" class="muted small">50%</div>
+
         <button id="btn-tap" class="btn btn-primary">Fire Tap &amp; Inspect</button>
+        <button id="btn-tap-sim" class="btn">Simulate Tap (no ESP32)</button>
       </div>
 
       <div id="result-card" class="card result-card hidden">
@@ -55,12 +64,14 @@
         <div class="result-row muted" id="result-method">-</div>
       </div>
 
-      <canvas id="chart" width="600" height="220"></canvas>
+      <canvas id="chart" width="600" height="200"></canvas>
       <p class="muted small">Red = X, Green = Y, Blue = Z (m/s²)</p>
     </main>
 
     <main id="view-heatmap" class="view">
-      <h1>Inspection Points</h1>
+      <h1>Inspection Map</h1>
+      <p class="muted small">Schematic position along span. Not to structural scale — placeholder until CAD overlay is added.</p>
+      <canvas id="heatmap-canvas" width="600" height="140"></canvas>
       <div id="points-list"></div>
     </main>
 

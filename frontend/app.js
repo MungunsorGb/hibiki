@@ -1,4 +1,4 @@
-const API = "";  // same origin, since backend serves this frontend
+const API = "";
 
 const els = {
   connBadge: document.getElementById("conn-badge"),
@@ -9,17 +9,24 @@ const els = {
   progressText: document.getElementById("progress-text"),
   btnReset: document.getElementById("btn-reset"),
   pointLabel: document.getElementById("point-label"),
+  pointPosition: document.getElementById("point-position"),
+  positionReadout: document.getElementById("position-readout"),
   btnTap: document.getElementById("btn-tap"),
+  btnTapSim: document.getElementById("btn-tap-sim"),
   resultCard: document.getElementById("result-card"),
   resultBadge: document.getElementById("result-badge"),
   resultLabel: document.getElementById("result-label"),
   resultDev: document.getElementById("result-dev"),
   resultMethod: document.getElementById("result-method"),
   chart: document.getElementById("chart"),
+  heatmapCanvas: document.getElementById("heatmap-canvas"),
   pointsList: document.getElementById("points-list"),
 };
 
-// --- tab navigation ---
+els.pointPosition.addEventListener("input", () => {
+  els.positionReadout.textContent = els.pointPosition.value + "%";
+});
+
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
@@ -29,6 +36,18 @@ document.querySelectorAll(".tab").forEach(tab => {
     if (tab.dataset.view === "heatmap") loadPoints();
   });
 });
+document.getElementById("btn-baseline-sim").addEventListener("click", async () => {
+    els.baselineStatus.textContent = "Generating simulated baseline...";
+    try {
+      const res = await fetch(`${API}/esp32/baseline-sim`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed");
+      els.baselineStatus.textContent =
+        `[SIMULATED] Baseline set. RMS=${data.summary.rms_magnitude}, peak-to-peak=${data.summary.peak_to_peak_magnitude}`;
+    } catch (e) {
+      els.baselineStatus.textContent = "Error: " + e.message;
+    }
+  });
 
 function badgeClass(label) {
   if (label === "Normal") return "badge-normal";
@@ -36,8 +55,13 @@ function badgeClass(label) {
   if (label === "Attention") return "badge-attention";
   return "badge-gray";
 }
+function dotColor(label) {
+  if (label === "Normal") return "#1f9d55";
+  if (label === "Warning") return "#b6780a";
+  if (label === "Attention") return "#d63c34";
+  return "#8a94a3";
+}
 
-// --- connect ---
 els.btnConnect.addEventListener("click", async () => {
   const ip = els.esp32Ip.value.trim();
   if (!ip) return alert("Enter the ESP32 IP first.");
@@ -54,7 +78,6 @@ els.btnConnect.addEventListener("click", async () => {
   }
 });
 
-// --- baseline ---
 els.btnBaseline.addEventListener("click", async () => {
   els.baselineStatus.textContent = "Firing tap for baseline...";
   try {
@@ -71,7 +94,6 @@ els.btnBaseline.addEventListener("click", async () => {
   }
 });
 
-// --- reset ---
 els.btnReset.addEventListener("click", async () => {
   await fetch(`${API}/points`, { method: "DELETE" });
   els.baselineStatus.textContent = "No baseline set yet.";
@@ -80,34 +102,48 @@ els.btnReset.addEventListener("click", async () => {
   els.pointsList.innerHTML = "";
 });
 
-// --- tap / inspect ---
+function renderResult(data) {
+  els.resultCard.classList.remove("hidden");
+  els.resultBadge.textContent = data.classification;
+  els.resultBadge.className = "badge " + badgeClass(data.classification);
+  els.resultLabel.textContent = data.classification;
+  els.resultDev.textContent = data.deviation_pct + "%";
+  els.resultMethod.textContent = data.method;
+  drawChart(data.raw.x, data.raw.y, data.raw.z);
+  updateProgress();
+}
+
 els.btnTap.addEventListener("click", async () => {
   const label = els.pointLabel.value.trim() || "Unlabeled point";
+  const position_pct = parseFloat(els.pointPosition.value);
   els.btnTap.textContent = "Tapping...";
   els.btnTap.disabled = true;
   try {
     const res = await fetch(`${API}/esp32/tap`, {
       method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({label})
+      body: JSON.stringify({label, position_pct})
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Failed");
-
-    els.resultCard.classList.remove("hidden");
-    els.resultBadge.textContent = data.classification;
-    els.resultBadge.className = "badge " + badgeClass(data.classification);
-    els.resultLabel.textContent = data.classification;
-    els.resultDev.textContent = data.deviation_pct + "%";
-    els.resultMethod.textContent = data.method;
-
-    drawChart(data.raw.x, data.raw.y, data.raw.z);
-    updateProgress();
+    renderResult(data);
   } catch (e) {
     alert("Error: " + e.message);
   } finally {
     els.btnTap.textContent = "Fire Tap & Inspect";
     els.btnTap.disabled = false;
   }
+});
+
+els.btnTapSim.addEventListener("click", async () => {
+  const label = els.pointLabel.value.trim() || "Unlabeled point";
+  const position_pct = parseFloat(els.pointPosition.value);
+  const res = await fetch(`${API}/esp32/tap-sim`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({label, position_pct})
+  });
+  const data = await res.json();
+  if (!res.ok) return alert("Error: " + (data.detail || "Failed"));
+  renderResult(data);
 });
 
 function drawChart(xs, ys, zs) {
@@ -127,9 +163,9 @@ function drawChart(xs, ys, zs) {
     });
     ctx.stroke();
   }
-  series(xs, "#f87171");
-  series(ys, "#4ade80");
-  series(zs, "#60a5fa");
+  series(xs, "#e0554f");
+  series(ys, "#1f9d55");
+  series(zs, "#2f6fed");
 }
 
 async function updateProgress() {
@@ -138,9 +174,37 @@ async function updateProgress() {
   els.progressText.textContent = `${data.points.length} point(s) inspected`;
 }
 
+function drawHeatmap(points) {
+  const ctx = els.heatmapCanvas.getContext("2d");
+  const w = els.heatmapCanvas.width, h = els.heatmapCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // schematic span line
+  const y = h / 2;
+  ctx.strokeStyle = "#d8dee6";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(30, y);
+  ctx.lineTo(w - 30, y);
+  ctx.stroke();
+  ctx.fillStyle = "#8a94a3";
+  ctx.font = "11px sans-serif";
+  ctx.fillText("Span start", 20, y + 30);
+  ctx.fillText("Span end", w - 80, y + 30);
+
+  points.forEach(p => {
+    const px = 30 + ((p.position_pct ?? 50) / 100) * (w - 60);
+    ctx.beginPath();
+    ctx.arc(px, y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = dotColor(p.classification);
+    ctx.fill();
+  });
+}
+
 async function loadPoints() {
   const res = await fetch(`${API}/points`);
   const data = await res.json();
+  drawHeatmap(data.points);
   els.pointsList.innerHTML = "";
   if (data.points.length === 0) {
     els.pointsList.innerHTML = '<p class="muted">No points inspected yet.</p>';
@@ -152,7 +216,7 @@ async function loadPoints() {
     div.innerHTML = `
       <div>
         <div>${p.label}</div>
-        <div class="muted small">${p.deviation_pct}% deviation</div>
+        <div class="muted small">${p.position_pct ?? 50}% along span · ${p.deviation_pct}% deviation</div>
       </div>
       <span class="badge ${badgeClass(p.classification)}">${p.classification}</span>
     `;
