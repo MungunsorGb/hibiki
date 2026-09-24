@@ -37,7 +37,9 @@
         <div class="card-label">POINT LABEL</div>
         <input id="point-label" type="text" placeholder="e.g. Girder 3" />
         <button id="btn-tap" class="btn btn-primary">Fire Tap &amp; Inspect</button>
-        <button id="btn-tap-sim" class="btn">Simulate Tap (no ESP32)</button>
+        <button id="btn-tap-sim" class="btn">Tap</button>
+        <button id="btn-move-forward" class="btn">Move Forward</button>
+
       </div>
 
       <div id="result-card" class="card result-card hidden">
@@ -58,6 +60,7 @@
       <p class="muted small">Points shown in tap order along the robot's path.</p>
       <canvas id="heatmap-canvas" width="600" height="140"></canvas>
       <div id="points-list"></div>
+      <button id="btn-report" class="btn btn-primary">Generate Report (PDF)</button>
     </main>
 
     <nav class="tabbar">

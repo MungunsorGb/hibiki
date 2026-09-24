@@ -7,3 +7,4 @@ joblib
 pip install -r requirements.txt
 fastapi
 uvicorn[standard]
+fpdf2

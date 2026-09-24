@@ -16,6 +16,7 @@ const els = {
   chart: document.getElementById("chart"),
   heatmapCanvas: document.getElementById("heatmap-canvas"),
   pointsList: document.getElementById("points-list"),
+  btnReport: document.getElementById("btn-report"),
 };
 
 document.querySelectorAll(".tab").forEach(tab => {
@@ -56,6 +57,31 @@ els.btnConnect.addEventListener("click", async () => {
     els.connBadge.className = "badge badge-attention";
   }
 });
+els.btnReport.addEventListener("click", async () => {
+    els.btnReport.textContent = "Generating...";
+    els.btnReport.disabled = true;
+    try {
+      const res = await fetch(`${API}/report/pdf`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "Failed to generate report.");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "hibiki_ai_report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Error: " + e.message);
+    } finally {
+      els.btnReport.textContent = "Generate Report (PDF)";
+      els.btnReport.disabled = false;
+    }
+  });
 
 els.btnReset.addEventListener("click", async () => {
   await fetch(`${API}/points`, { method: "DELETE" });
