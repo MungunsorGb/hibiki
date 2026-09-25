@@ -8,10 +8,11 @@ const els = {
   btnReset: document.getElementById("btn-reset"),
   pointLabel: document.getElementById("point-label"),
   btnTap: document.getElementById("btn-tap"),
-  btnTapSim: document.getElementById("btn-tap-sim"),
+  btnMoveForward: document.getElementById("btn-move-forward"),
   resultCard: document.getElementById("result-card"),
   resultBadge: document.getElementById("result-badge"),
   resultLabel: document.getElementById("result-label"),
+  resultConfidence: document.getElementById("result-confidence"),
   resultMethod: document.getElementById("result-method"),
   chart: document.getElementById("chart"),
   heatmapCanvas: document.getElementById("heatmap-canvas"),
@@ -29,16 +30,20 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+// Two label sets are possible depending on whether a trained model is
+// loaded: "Healthy/Corrosion/LooseBolt" (trained classifier) or
+// "Normal/Warning/Attention" (fixed-threshold fallback). Both map to the
+// same good/caution/bad visual treatment.
 function badgeClass(label) {
-  if (label === "Normal") return "badge-normal";
-  if (label === "Warning") return "badge-warning";
-  if (label === "Attention") return "badge-attention";
+  if (label === "Normal" || label === "Healthy") return "badge-normal";
+  if (label === "Warning" || label === "Corrosion") return "badge-warning";
+  if (label === "Attention" || label === "LooseBolt") return "badge-attention";
   return "badge-gray";
 }
 function dotColor(label) {
-  if (label === "Normal") return "#1f9d55";
-  if (label === "Warning") return "#b6780a";
-  if (label === "Attention") return "#d63c34";
+  if (label === "Normal" || label === "Healthy") return "#1f9d55";
+  if (label === "Warning" || label === "Corrosion") return "#b6780a";
+  if (label === "Attention" || label === "LooseBolt") return "#d63c34";
   return "#8a94a3";
 }
 
@@ -95,6 +100,9 @@ function renderResult(data) {
   els.resultBadge.textContent = data.classification;
   els.resultBadge.className = "badge " + badgeClass(data.classification);
   els.resultLabel.textContent = data.classification;
+  els.resultConfidence.textContent = (typeof data.confidence === "number")
+    ? `Confidence: ${(data.confidence * 100).toFixed(0)}%`
+    : "";
   els.resultMethod.textContent = data.method;
   drawChart(data.raw.x, data.raw.y, data.raw.z);
   updateProgress();
@@ -120,15 +128,24 @@ els.btnTap.addEventListener("click", async () => {
   }
 });
 
-els.btnTapSim.addEventListener("click", async () => {
-  const label = els.pointLabel.value.trim() || "Unlabeled point";
-  const res = await fetch(`${API}/esp32/tap-sim`, {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({label})
-  });
-  const data = await res.json();
-  if (!res.ok) return alert("Error: " + (data.detail || "Failed"));
-  renderResult(data);
+els.btnMoveForward.addEventListener("click", async () => {
+  els.btnMoveForward.textContent = "Moving...";
+  els.btnMoveForward.disabled = true;
+  try {
+    const res = await fetch(`${API}/esp32/move`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Failed");
+    // Duration-based move, not a calibrated distance (no wheel encoders) -
+    // see backend/main.py MOVE_DURATION_MS.
+  } catch (e) {
+    alert("Error: " + e.message);
+  } finally {
+    els.btnMoveForward.textContent = "Move Forward";
+    els.btnMoveForward.disabled = false;
+  }
 });
 
 function drawChart(xs, ys, zs) {

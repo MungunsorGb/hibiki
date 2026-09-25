@@ -1,4 +1,19 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
-.ipynb_checkpoints/.DS_Store
+
+# OS / editor
+.ipynb_checkpoints/
+.DS_Store
+
+# Secrets — never commit real Wi-Fi credentials or device config
+firmware/esp32_sensor/secrets.h
+
+# Trained model artifacts are derived from data/sample/ and can be
+# regenerated with `python ai/src/train_classifier.py`; not committed
+# so the repo doesn't silently ship a stale model.
+ai/models/*.joblib
+
+# Local run artifacts
+data/processed/*.png
