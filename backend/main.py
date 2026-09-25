@@ -2,20 +2,28 @@
 main.py - HIBIKI-AI backend
 
 Serves:
-  - JSON API for triggering ESP32 taps and classifying them with fixed,
-    uncalibrated thresholds (see backend/features.py).
+  - JSON API for triggering ESP32 taps and classifying them.
+  - JSON API for triggering a fixed-duration forward move.
   - The frontend (static files in ../frontend) at "/".
 
-No trained ML model and no baseline calibration exist yet. Each tap is
-classified independently using fixed placeholder thresholds. Points are
-appended in the order they're taken, along a straight line, matching the
-robot's straight-line movement.
+Classification: if ai/models/classifier.joblib exists, it is a real
+scikit-learn model trained by ai/src/train_classifier.py on labeled
+Healthy / Corrosion / LooseBolt taps, and is used for every /esp32/tap
+request. If that file does not exist, every response instead uses
+classify_by_magnitude(), a fixed uncalibrated threshold rule, and is
+labeled as such in its "method" field so the two can never be confused
+in the UI or the PDF report. There is no simulated/fake data path in
+this backend -- every point is either a real ESP32 reading or the
+request fails with an error.
 
-/esp32/tap-sim generates synthetic data for UI/demo testing when real
-ESP32 hardware is unavailable. Simulated results are always labeled
-[SIMULATED] and must never be presented as real inspection data.
+Movement: MOVE_DURATION_MS below is a placeholder run time for
+"Move Forward", NOT a calibrated distance. No wheel encoders exist on
+this robot, so there is no way to close the loop on real distance
+travelled without a real calibration measurement (drive at the normal
+command, time a known distance with a stopwatch, compute mm/ms). Until
+that measurement is supplied, this endpoint honestly reports the
+duration it ran for and does not claim a distance value.
 """
-import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
@@ -24,10 +32,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import Response
 from pydantic import BaseModel
-from backend.report import generate_pdf
 
-from backend.esp32_bridge import fetch_and_parse, ESP32Error
-from backend.features import summarize, classify_by_magnitude
+from backend.report import generate_pdf
+from backend.esp32_bridge import fetch_and_parse, trigger_move, ESP32Error
+from backend.features import summarize, extract_feature_vector, classify_by_magnitude
 
 app = FastAPI(title="HIBIKI-AI Backend")
 
@@ -36,22 +44,49 @@ STATE = {
     "points": [],
 }
 
+MODEL_PATH = Path(__file__).resolve().parent.parent / "ai" / "models" / "classifier.joblib"
 
-class VibrationSample(BaseModel):
-    x: List[float]
-    y: List[float]
-    z: List[float]
-    sample_rate_hz: Optional[float] = None
+# Placeholder run time for a forward move. NOT a calibrated distance --
+# see module docstring. Replace once a real mm/ms measurement exists,
+# and turn this into an actual distance-based calculation at that point.
+MOVE_DURATION_MS = 1000
 
 
-class InspectionResult(BaseModel):
-    status: str
-    model_status: str
-    damage_class: Optional[str]
-    confidence: Optional[float]
-    n_samples_received: int
-    timestamp_utc: str
-    note: str
+def _load_model():
+    if not MODEL_PATH.exists():
+        return None
+    import joblib
+    try:
+        bundle = joblib.load(MODEL_PATH)
+        return bundle
+    except Exception:
+        return None
+
+
+def classify(xs: List[float], ys: List[float], zs: List[float], summary: dict) -> dict:
+    """Single source of truth for turning a tap into a classification.
+    Picks the trained model if one exists, otherwise the honest fallback."""
+    bundle = _load_model()
+    if bundle is not None:
+        model = bundle["model"]
+        feats = [extract_feature_vector(xs, ys, zs)]
+        pred = model.predict(feats)[0]
+        proba = None
+        if hasattr(model, "predict_proba"):
+            classes = list(model.classes_)
+            probs = model.predict_proba(feats)[0]
+            proba = round(float(probs[classes.index(pred)]), 4)
+        return {
+            "classification": pred,
+            "confidence": proba,
+            "method": "trained-classifier (RandomForest, ai/models/classifier.joblib)",
+        }
+    fallback = classify_by_magnitude(summary)
+    return {
+        "classification": fallback["classification"],
+        "confidence": fallback["confidence"],
+        "method": fallback["method"],
+    }
 
 
 class ESP32Config(BaseModel):
@@ -63,27 +98,14 @@ class TapRequest(BaseModel):
     esp32_ip: Optional[str] = None
 
 
+class MoveRequest(BaseModel):
+    esp32_ip: Optional[str] = None
+    duration_ms: Optional[int] = None
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "HIBIKI-AI backend"}
-
-
-@app.post("/inspect", response_model=InspectionResult)
-def inspect(data: VibrationSample):
-    n = len(data.x)
-    if not (len(data.x) == len(data.y) == len(data.z)):
-        raise HTTPException(status_code=400, detail="x, y, z must be the same length.")
-    if n == 0:
-        raise HTTPException(status_code=400, detail="No data received.")
-    return InspectionResult(
-        status="received",
-        model_status="PLACEHOLDER - no trained model loaded yet",
-        damage_class=None,
-        confidence=None,
-        n_samples_received=n,
-        timestamp_utc=datetime.now(timezone.utc).isoformat(),
-        note="Raw ingestion test only.",
-    )
+    return {"status": "ok", "service": "HIBIKI-AI backend", "model_loaded": MODEL_PATH.exists()}
 
 
 @app.post("/esp32/config")
@@ -104,14 +126,6 @@ def _resolve_ip(esp32_ip: Optional[str]) -> str:
     return ip
 
 
-def _fake_reading():
-    n = 200
-    xs = [5.6 + random.uniform(-0.3, 0.3) for _ in range(n)]
-    ys = [8.0 + random.uniform(-0.3, 0.3) for _ in range(n)]
-    zs = [3.4 + random.uniform(-0.5, 1.5) for _ in range(n)]
-    return xs, ys, zs
-
-
 @app.post("/esp32/tap")
 def tap(req: TapRequest):
     ip = _resolve_ip(req.esp32_ip)
@@ -121,7 +135,7 @@ def tap(req: TapRequest):
         raise HTTPException(status_code=502, detail=str(e))
 
     summary = summarize(xs, ys, zs)
-    result = classify_by_magnitude(summary)
+    result = classify(xs, ys, zs, summary)
 
     point = {
         "label": req.label,
@@ -129,6 +143,7 @@ def tap(req: TapRequest):
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "summary": summary,
         "classification": result["classification"],
+        "confidence": result["confidence"],
         "method": result["method"],
         "raw": {"x": xs, "y": ys, "z": zs},
     }
@@ -136,23 +151,21 @@ def tap(req: TapRequest):
     return point
 
 
-@app.post("/esp32/tap-sim")
-def tap_simulated(req: TapRequest):
-    xs, ys, zs = _fake_reading()
-    summary = summarize(xs, ys, zs)
-    result = classify_by_magnitude(summary)
-
-    point = {
-        "label": req.label + " [SIMULATED]",
-        "order": len(STATE["points"]),
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "summary": summary,
-        "classification": result["classification"],
-        "method": result["method"] + " [SIMULATED DATA]",
-        "raw": {"x": xs, "y": ys, "z": zs},
+@app.post("/esp32/move")
+def move(req: MoveRequest):
+    ip = _resolve_ip(req.esp32_ip)
+    duration_ms = req.duration_ms or MOVE_DURATION_MS
+    try:
+        trigger_move(ip, duration_ms)
+    except ESP32Error as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    return {
+        "status": "moved",
+        "duration_ms": duration_ms,
+        "note": "Duration-based move, NOT a calibrated distance (no wheel encoders). "
+                "See MOVE_DURATION_MS in backend/main.py.",
     }
-    STATE["points"].append(point)
-    return point
+
 
 @app.get("/report/pdf")
 def report_pdf():

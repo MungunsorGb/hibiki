@@ -13,10 +13,16 @@ from typing import List, Dict
 from fpdf import FPDF
 
 STATUS_COLORS = {
+    # Fixed-threshold fallback labels
     "Normal": (31, 157, 85),
     "Warning": (182, 120, 10),
     "Attention": (214, 60, 52),
+    # Trained-classifier labels
+    "Healthy": (31, 157, 85),
+    "Corrosion": (182, 120, 10),
+    "LooseBolt": (214, 60, 52),
 }
+DEFAULT_COLOR = (90, 90, 90)
 
 
 def generate_pdf(points: List[Dict]) -> bytes:
@@ -43,11 +49,13 @@ def generate_pdf(points: List[Dict]) -> bytes:
     pdf.set_text_color(90, 90, 90)
     pdf.multi_cell(
         0, 5,
-        "Results below use fixed, uncalibrated peak-to-peak magnitude "
-        "thresholds (see backend/features.py). This is NOT a trained "
-        "machine learning model. Thresholds have not been validated "
-        "against real damaged specimens. Any point marked [SIMULATED] "
-        "used synthetic demo data, not a real sensor reading."
+        "Each point below shows its own classification method in the app "
+        "and API response. Points may be classified either by a trained "
+        "scikit-learn model (ai/models/classifier.joblib, if present) or, "
+        "when no trained model file exists, by a fixed and uncalibrated "
+        "peak-to-peak magnitude threshold. All points in this report are "
+        "real ESP32 sensor readings; this backend has no simulated/demo "
+        "data path."
     )
     pdf.ln(3)
     pdf.set_text_color(0, 0, 0)
@@ -59,25 +67,23 @@ def generate_pdf(points: List[Dict]) -> bytes:
         pdf.output(buf)
         return buf.getvalue()
 
-    # --- summary counts ---
-    counts = {"Normal": 0, "Warning": 0, "Attention": 0}
+    # --- summary counts (label set depends on trained model vs. fallback) ---
+    counts = {}
     for p in points:
-        c = p.get("classification", "Normal")
+        c = p.get("classification", "Unknown")
         counts[c] = counts.get(c, 0) + 1
 
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 7, "Summary", ln=True)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, f"Normal: {counts.get('Normal', 0)}   "
-                   f"Warning: {counts.get('Warning', 0)}   "
-                   f"Attention: {counts.get('Attention', 0)}", ln=True)
+    pdf.cell(0, 6, "   ".join(f"{k}: {v}" for k, v in counts.items()), ln=True)
     pdf.ln(4)
 
     # --- table header ---
     pdf.set_font("Helvetica", "B", 9)
     pdf.set_fill_color(240, 240, 240)
-    col_widths = [12, 45, 22, 28, 28, 55]
-    headers = ["#", "Label", "Status", "Peak-Peak", "RMS", "Timestamp (UTC)"]
+    col_widths = [10, 38, 26, 16, 24, 24, 52]
+    headers = ["#", "Label", "Status", "Conf.", "Peak-Peak", "RMS", "Timestamp (UTC)"]
     for w, h in zip(col_widths, headers):
         pdf.cell(w, 8, h, border=1, fill=True)
     pdf.ln()
@@ -85,22 +91,25 @@ def generate_pdf(points: List[Dict]) -> bytes:
     # --- table rows ---
     pdf.set_font("Helvetica", "", 8)
     for p in points:
-        status = p.get("classification", "Normal")
-        color = STATUS_COLORS.get(status, (0, 0, 0))
+        status = p.get("classification", "Unknown")
+        color = STATUS_COLORS.get(status, DEFAULT_COLOR)
         summary = p.get("summary", {})
+        confidence = p.get("confidence")
+        conf_str = f"{confidence:.0%}" if isinstance(confidence, (int, float)) else "-"
 
         pdf.set_text_color(0, 0, 0)
         pdf.cell(col_widths[0], 7, str(p.get("order", "") + 1 if isinstance(p.get("order"), int) else ""), border=1)
-        pdf.cell(col_widths[1], 7, str(p.get("label", ""))[:28], border=1)
+        pdf.cell(col_widths[1], 7, str(p.get("label", ""))[:24], border=1)
 
         pdf.set_text_color(*color)
-        pdf.cell(col_widths[2], 7, status, border=1)
+        pdf.cell(col_widths[2], 7, str(status)[:14], border=1)
         pdf.set_text_color(0, 0, 0)
 
-        pdf.cell(col_widths[3], 7, str(summary.get("peak_to_peak_magnitude", "")), border=1)
-        pdf.cell(col_widths[4], 7, str(summary.get("rms_magnitude", "")), border=1)
+        pdf.cell(col_widths[3], 7, conf_str, border=1)
+        pdf.cell(col_widths[4], 7, str(summary.get("peak_to_peak_magnitude", "")), border=1)
+        pdf.cell(col_widths[5], 7, str(summary.get("rms_magnitude", "")), border=1)
         ts = str(p.get("timestamp_utc", ""))[:19]
-        pdf.cell(col_widths[5], 7, ts, border=1)
+        pdf.cell(col_widths[6], 7, ts, border=1)
         pdf.ln()
 
     buf = BytesIO()
